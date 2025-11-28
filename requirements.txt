@@ -1,0 +1,12 @@
+pyrogram==2.0.0
+tgcrypto
+aioredis
+SQLAlchemy
+alembic
+psycopg2-binary
+python-dotenv
+APScheduler
+pytest
+uvicorn
+fastapi
+requests
