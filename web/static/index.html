@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>HyperGriot - Modlogs</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Roboto, "Segoe UI", Arial; margin: 24px; color: #111; }
+    table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+    th, td { padding: 8px 10px; border: 1px solid #e6e6e6; text-align: left; }
+    th { background: #fafafa; }
+    input, button { padding: 8px; margin-right: 8px; }
+    .controls { margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <h2>HyperGriot — Modlogs</h2>
+  <div class="controls">
+    <label>API token: <input id="token" value="" placeholder="X-Token value"></label>
+    <label>Chat id: <input id="chat" placeholder="optional chat id"></label>
+    <label>Limit: <input id="limit" value="50" style="width:60px"></label>
+    <button id="load">Load</button>
+    <button id="export">Export JSON</button>
+  </div>
+  <div id="status"></div>
+  <table id="tbl" style="display:none">
+    <thead><tr><th>time</th><th>chat</th><th>action</th><th>target</th><th>moderator</th><th>reason</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    const el = id => document.getElementById(id);
+    el('load').addEventListener('click', async () => {
+      const token = el('token').value.trim();
+      if (!token) { el('status').innerText = "Set X-Token first"; return; }
+      const chat = el('chat').value.trim();
+      const limit = el('limit').value || 50;
+      const q = chat ? `?chat_id=${encodeURIComponent(chat)}&limit=${limit}` : `?limit=${limit}`;
+      el('status').innerText = "Loading..."
+      try {
+        const res = await fetch('/api/modlogs/list' + q, { headers: { 'X-Token': token }});
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        const tbody = document.querySelector('#tbl tbody');
+        tbody.innerHTML = '';
+        data.forEach(r => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${r.created_at || ''}</td><td>${r.chat_id}</td><td>${r.action}</td><td>${r.target_user || ''}</td><td>${r.moderator_id || ''}</td><td>${r.reason || ''}</td>`;
+          tbody.appendChild(tr);
+        });
+        el('tbl').style.display = '';
+        el('status').innerText = `Loaded ${data.length} rows`;
+      } catch (e) {
+        el('status').innerText = 'Error: ' + e.message;
+        el('tbl').style.display = 'none';
+      }
+    });
+
+    el('export').addEventListener('click', async () => {
+      const token = el('token').value.trim();
+      if (!token) { el('status').innerText = "Set X-Token first"; return; }
+      const chat = el('chat').value.trim();
+      const q = chat ? `?chat_id=${encodeURIComponent(chat)}` : '';
+      const res = await fetch('/api/modlogs/export' + q, { headers: { 'X-Token': token }});
+      if (!res.ok) { el('status').innerText = 'Export failed'; return; }
+      const text = await res.text();
+      const blob = new Blob([text], {type: 'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'modlogs.json'; a.click();
+      URL.revokeObjectURL(url);
+    });
+  </script>
+</body>
+</html>
