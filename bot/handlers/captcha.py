@@ -1,0 +1,3 @@
+# bot/handlers/captcha.py
+from pyrogram import Client, filters
+...
