@@ -11,10 +11,6 @@ def gen_action_id() -> str:
     return str(uuid.uuid4())
 
 def parse_duration_str(duration: Optional[str]) -> Optional[int]:
-    """
-    Accepts strings like '10m', '1h30m' and returns seconds.
-    Uses utils.parse_time_to_seconds if available.
-    """
     if not duration:
         return None
     try:
@@ -23,10 +19,10 @@ def parse_duration_str(duration: Optional[str]) -> Optional[int]:
     except Exception:
         return None
 
-def perform_action(
+async def perform_action(
     client,
     chat_id: int,
-    issuer_id: int,
+    issuer_id: Optional[int],
     target_user_id: int,
     action: str,
     duration: Optional[str] = None,
@@ -34,22 +30,12 @@ def perform_action(
     silent: bool = False,
 ) -> Dict[str, Any]:
     """
-    Centralized performer for actions. This function does:
-     - basic validation (permissions/hierarchy checks are stubs here)
-     - calls Telegram API via provided client
-     - persists modlog and ban/mute records in DB
-     - returns {'action_id': str, 'ok': bool, 'error': Optional[str]}
-    Note: client should be an instance of pyrogram.Client.
+    Centralized performer for actions. Async version that awaits pyrogram client calls.
+    Returns dict {action_id, ok, error}
     """
-
     action_id = gen_action_id()
     now = datetime.now(timezone.utc)
 
-    # basic permission/hierarchy checks (TODO: implement fully)
-    # e.g., check issuer is admin and issuer outranks target
-    # For now we assume caller already validated this.
-
-    # Parse duration if temporary
     seconds = None
     if action.startswith("t") and duration:
         seconds = parse_duration_str(duration)
@@ -59,11 +45,8 @@ def perform_action(
 
     res = {"action_id": action_id, "ok": False, "error": None}
     try:
-        # map basic actions -> Telegram calls
         if action in ("ban", "tban"):
-            # ban_chat_member supports until_date for temporary bans
-            client.ban_chat_member(chat_id, target_user_id, until_date=until_date)
-            # create DB ban record
+            await client.ban_chat_member(chat_id, target_user_id, until_date=until_date)
             with SessionLocal() as db:
                 b = models.Ban(
                     chat_id=chat_id,
@@ -78,9 +61,8 @@ def perform_action(
                 db.add(b)
                 db.commit()
         elif action in ("unban",):
-            client.unban_chat_member(chat_id, target_user_id)
+            await client.unban_chat_member(chat_id, target_user_id)
             with SessionLocal() as db:
-                # mark active bans inactive for this user in chat
                 db.query(models.Ban).filter(
                     models.Ban.chat_id == chat_id,
                     models.Ban.user_id == target_user_id,
@@ -88,7 +70,6 @@ def perform_action(
                 ).update({"active": False})
                 db.commit()
         elif action in ("mute", "tmute"):
-            # use restrict_chat_member
             from pyrogram.types import ChatPermissions
             perms = ChatPermissions(
                 can_send_messages=False,
@@ -100,7 +81,7 @@ def perform_action(
                 can_invite_users=False,
                 can_pin_messages=False,
             )
-            client.restrict_chat_member(chat_id, target_user_id, permissions=perms, until_date=until_date)
+            await client.restrict_chat_member(chat_id, target_user_id, permissions=perms, until_date=until_date)
             with SessionLocal() as db:
                 m = models.Mute(
                     chat_id=chat_id,
@@ -115,24 +96,43 @@ def perform_action(
                 )
                 db.add(m)
                 db.commit()
+        elif action in ("unmute",):
+            # unrestrict: allow sending messages (careful: this restores general rights)
+            from pyrogram.types import ChatPermissions
+            perms = ChatPermissions(
+                can_send_messages=True,
+                can_send_media_messages=True,
+                can_send_polls=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True,
+                can_change_info=False,
+                can_invite_users=True,
+                can_pin_messages=False,
+            )
+            await client.restrict_chat_member(chat_id, target_user_id, permissions=perms)
+            with SessionLocal() as db:
+                db.query(models.Mute).filter(
+                    models.Mute.chat_id == chat_id,
+                    models.Mute.user_id == target_user_id,
+                    models.Mute.active == True,
+                ).update({"active": False})
+                db.commit()
         elif action in ("kick",):
-            # implement as ban + unban to allow rejoin
-            client.ban_chat_member(chat_id, target_user_id)
-            client.unban_chat_member(chat_id, target_user_id, only_if_banned=True)
+            await client.ban_chat_member(chat_id, target_user_id)
+            await client.unban_chat_member(chat_id, target_user_id, only_if_banned=True)
         else:
             res["error"] = f"Unknown action: {action}"
             return res
 
-        # create modlog entry
         meta = {"reason": reason, "duration": duration}
         log_id = create_modlog_record(chat_id=chat_id, moderator_id=issuer_id, action=action.upper(), target_user=target_user_id, reason=reason, metadata=meta)
-        # send modlog message (non-blocking; may raise)
         try:
             send_modlog(client, chat_id, log_id)
         except Exception:
             pass
 
         res["ok"] = True
+        res["action_id"] = log_id
         return res
 
     except Exception as e:

@@ -3,8 +3,8 @@ import re
 from datetime import timedelta
 from typing import Optional
 from pyrogram import Client
+from pyrogram.types import ChatMember
 
-# Time parser reused across commands
 UNITS = {
     's': 1,
     'sec': 1, 'secs': 1, 'second': 1, 'seconds': 1,
@@ -69,7 +69,12 @@ async def resolve_user(client: Client, chat_id: int, identifier: str):
     except Exception:
         return None
 
-# stub permission check - implement actual logic later
-async def is_admin(chat_id: int, user_id: int) -> bool:
-    # placeholder, use client.get_chat_member in real code
-    return False
+# is_admin: checks if a user is an admin or owner in the chat
+async def is_admin(client: Client, chat_id: int, user_id: int) -> bool:
+    try:
+        member = await client.get_chat_member(chat_id, user_id)
+        if member.status in ("creator", "administrator"):
+            return True
+        return False
+    except Exception:
+        return False
