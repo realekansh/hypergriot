@@ -9,3 +9,4 @@ dist/
 *.db
 *.log
 secrets/
+extras/backups
