@@ -1,39 +1,56 @@
-import aioredis
+"""
+services/flood_service.py
+
+Safe async Redis helper for flood counters.
+
+This module prefers redis.asyncio (redis-py >=4.x) and falls back to aioredis if available.
+Importing this module will not raise on machines without Redis clients installed;
+instead get_redis() will raise an informative error when actually called.
+"""
 import os
-import json
-from typing import Optional
+import typing
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+_redis_client_module = None
+_redis_client_name = None
+
+# Try to import redis.asyncio (preferred)
+try:
+    import redis.asyncio as _redis_asyncio  # type: ignore
+    _redis_client_module = _redis_asyncio
+    _redis_client_name = "redis.asyncio"
+except Exception:
+    # fallback to aioredis (older package) if available
+    try:
+        import aioredis as _aioredis  # type: ignore
+        _redis_client_module = _aioredis
+        _redis_client_name = "aioredis"
+    except Exception:
+        _redis_client_module = None
+        _redis_client_name = None
+
 async def get_redis():
-    return await aioredis.from_url(REDIS_URL)
-
-async def incr_message_count(chat_id: int, user_id: int, window: int = 10) -> int:
     """
-    Increment per-user counter with TTL=window seconds.
-    Returns the current count.
-    """
-    r = await get_redis()
-    key = f"flood:chat:{chat_id}:user:{user_id}"
-    cnt = await r.incr(key)
-    if cnt == 1:
-        await r.expire(key, window)
-    return int(cnt)
+    Return an async Redis client instance.
 
-async def set_cooldown(chat_id: int, user_id: int, cooldown: int = 60):
-    r = await get_redis()
-    key = f"flood:cooldown:{chat_id}:{user_id}"
-    await r.set(key, "1", ex=cooldown)
-
-async def check_cooldown(chat_id: int, user_id: int) -> bool:
-    r = await get_redis()
-    key = f"flood:cooldown:{chat_id}:{user_id}"
-    val = await r.get(key)
-    return bool(val)
-
-async def get_settings(chat_id: int) -> dict:
+    - If redis.asyncio is available, returns redis.asyncio.from_url(...)
+    - If aioredis is available, returns aioredis.from_url(...)
+    - If neither is available, raises ImportError with guidance.
     """
-    Placeholder: in production read from DB/chat_settings and cache.
-    """
-    # default settings
-    return {"enabled": False, "threshold": 20, "window": 10, "action": "warn", "cooldown": 60}
+    if _redis_client_module is None:
+        raise ImportError(
+            "No async Redis client available. Install 'redis' (redis-py >= 4.x) "
+            "for best compatibility: pip install redis[async]\n"
+            "Or, if you prefer the older aioredis, install it: pip install aioredis\n\n"
+            f"Detected client: {_redis_client_name}"
+        )
+
+    # For redis.asyncio (redis-py >=4), use from_url
+    if _redis_client_name == "redis.asyncio":
+        return _redis_client_module.from_url(REDIS_URL)
+    # For aioredis (older), use from_url as well
+    if _redis_client_name == "aioredis":
+        return _redis_client_module.from_url(REDIS_URL)
+    # Should not reach here
+    raise ImportError("No supported async redis client available.")

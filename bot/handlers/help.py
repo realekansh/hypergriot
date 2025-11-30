@@ -86,7 +86,7 @@ async def help_cb(client, cq):
             for cat, cmds in sections.items():
                 doc_lines.append(cat)
                 for c in cmds:
-                    doc_lines.append(f\"{c['usage']:30} {c['short']}\")
+                    doc_lines.append(f"{c['usage']:30} {c['short']}")
                 doc_lines.append("")
             full = "\\n".join(doc_lines)
             await client.send_message(cq.from_user.id, full)

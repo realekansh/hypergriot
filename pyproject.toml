@@ -1,0 +1,11 @@
+[project]
+name = "hypergriot"
+version = "0.0.1"
+description = "Telegram moderation bot + dashboard"
+authors = [{name = "Ekansh"}]
+requires-python = ">=3.10"
+dependencies = []
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"

@@ -65,7 +65,7 @@ class ModLog(Base):
     action = Column(String(32), nullable=False)
     target_user = Column(BigInteger, nullable=True)
     reason = Column(Text, nullable=True)
-    metadata_json = Column(JSON, nullable=True)
+    metadata = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Ban(Base):
